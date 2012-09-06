@@ -17,6 +17,7 @@
 ! along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 MODULE tests
+use cfg
 use tools
 use core
 use omp_lib
@@ -26,11 +27,11 @@ CONTAINS
 !------------------------------------------------------------------------------
 !::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 !------------------------------------------------------------------------------
-SUBROUTINE ev_vs_k(lattice, d, q, ng, dx)
+SUBROUTINE ev_vs_k(d, q, ng, dx_vct)
 
-INTEGER :: INFO, ik, nk, d, q, ng, lattice, LWORK
+INTEGER :: INFO, ik, d, q, ng, LWORK
 COMPLEX(8) :: DUMMY(1,1)
-REAL(8) :: dx(d)
+REAL(8) :: dx_vct(d), kbase
 COMPLEX(8), ALLOCATABLE :: L(:, :), S_inv(:, :), z(:), EWORK(:)
 REAL(8), ALLOCATABLE :: lambda(:), k(:), vel(:), RWORK(:), M(:, :), &
   M_inv(:, :), C(:, :), g(:)
@@ -39,39 +40,42 @@ EXTERNAL :: ZGEEV
 !------------------------------------------------------------------------------
 CALL alloc_all (L, S_inv, z, EWORK, lambda, k, vel, RWORK, M, M_inv, C, g, &
   LWORK, d, q, ng)
-CALL setup_params(g, ng, lattice)
+CALL setup_params(g, ng)
 
 lambda(:) = 1.99d+0
 
 IF (lattice == 2) THEN
-    CALL adjust_lambda(lambda, dx, 4, 1, q, d)
-    CALL adjust_lambda(lambda, dx, 5, 2, q, d)
+    CALL adjust_lambda(lambda, dx_vct, 4, 1, q, d, g, ng)
+    CALL adjust_lambda(lambda, dx_vct, 5, 2, q, d, g, ng)
     !lambda(7:8) = (0.9d+0)*lambda(7:8)
 ELSE IF (lattice == 3) THEN
-    CALL adjust_lambda(lambda, dx, 5, 1, q, d)
-    CALL adjust_lambda(lambda, dx, 6, 2, q, d)
-    CALL adjust_lambda(lambda, dx, 7, 3, q, d)
+    CALL adjust_lambda(lambda, dx_vct, 5, 1, q, d, g, ng)
+    CALL adjust_lambda(lambda, dx_vct, 6, 2, q, d, g, ng)
+    CALL adjust_lambda(lambda, dx_vct, 7, 3, q, d, g, ng)
     !lambda(11:17) = (0.9d+0)*lambda(11:17)
     !lambda(24:26) = (0.9d+0)*lambda(24:26)
 ENDIF
 
 vel(:) = DBLE(0)
-vel(1) = 0.0577d+0
-
-nk = 100
+vel(1) = 0.2d+0
 
 !------------------------------------------------------------------------------
 ! Do test
 ! Find M and M_inv
-CALL get_M (d, q, M, lattice, dx)
+CALL get_M (d, q, M, dx_vct)
 CALL invert_M_orth (M, M_inv, q)
 
-CALL get_C (C, lambda, g, vel, ng, d, q, lattice, dx)
+CALL get_C (C, lambda, g, vel, ng, d, q, dx_vct)
 
 k(:) = DBLE(0)
 DO ik=0, nk 
-    k(1) = PI*DBLE(ik)/DBLE(nk)
-    k(2) = PI*DBLE(ik)/DBLE(nk)
+    kbase = 1.5d+0 + 0.5d+0*DBLE(ik)/DBLE(nk)
+    k(1) = kbase
+    k(2) = kbase
+    k(3) = kbase
+    !k(1) = PI*DBLE(ik)/DBLE(nk)
+    !k(2) = PI*DBLE(ik)/DBLE(nk)
+    !k(3) = PI*DBLE(ik)/DBLE(nk)
     ! Setup the inverse of the advection matrix S_inv
     CALL get_S_inv (S_inv, M, k, q, d)
 
@@ -89,15 +93,15 @@ END SUBROUTINE
 !------------------------------------------------------------------------------
 !::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 !------------------------------------------------------------------------------
-SUBROUTINE vmax_vs_lambda(lattice, dt, nthreads, d, q, ng, dx)
+SUBROUTINE vmax_vs_lambda(d, q, ng, dx_vct)
 
-INTEGER :: INFO, nk, d, q, ng, lattice, LWORK, ilambda, &
-  nlambda, ivel, nvel, nthreads
+INTEGER :: INFO, d, q, ng, LWORK, ilambda, &
+  ivel
 COMPLEX(8) :: DUMMY(1,1)
 COMPLEX(8), ALLOCATABLE :: L(:, :), S_inv(:, :), z(:), EWORK(:)
 REAL(8), ALLOCATABLE :: lambda(:), k(:), vel(:), RWORK(:), M(:, :), &
   M_inv(:, :), C(:, :), g(:), unstablek(:), maxk(:)
-REAL(8) :: maxz, dt, vmax, vlow, vhgh, dx(d)
+REAL(8) :: maxz, vlow, vhgh, dx_vct(d)
 REAL(8), ALLOCATABLE :: maxz_pl(:), maxk_pl(:, :)
 
 !------------------------------------------------------------------------------
@@ -111,29 +115,26 @@ ALLOCATE ( maxz_pl(nthreads) )
 CALL omp_set_num_threads(nthreads)
 
 !------------------------------------------------------------------------------
-CALL setup_params(g, ng, lattice)
-
-nlambda = 80
-nvel = 10
-nk = 10 
-vmax = 0.4d+0
+CALL setup_params(g, ng)
 
 ! Find M and M_inv
-CALL get_M (d, q, M, lattice, dx)
+CALL get_M (d, q, M, dx_vct)
 CALL invert_M_orth (M, M_inv, q)
+
+!CALL print_matrix(M, q, q)
 
 lambda(:) = DBLE(0)
 DO ilambda=0, nlambda
     lambda(:) = (1.8d+0) + DBLE(ilambda)*(0.2d+0)/DBLE(nlambda)
 
     IF (lattice == 2) THEN
-        CALL adjust_lambda(lambda, dx, 4, 1, q, d)
-        CALL adjust_lambda(lambda, dx, 5, 2, q, d)
+        CALL adjust_lambda(lambda, dx_vct, 4, 1, q, d, g, ng)
+        CALL adjust_lambda(lambda, dx_vct, 5, 2, q, d, g, ng)
         !lambda(7:8) = (0.9d+0)*lambda(7:8)
     ELSE IF (lattice == 3) THEN
-        CALL adjust_lambda(lambda, dx, 5, 1, q, d)
-        CALL adjust_lambda(lambda, dx, 6, 2, q, d)
-        CALL adjust_lambda(lambda, dx, 7, 3, q, d)
+        CALL adjust_lambda(lambda, dx_vct, 5, 1, q, d, g, ng)
+        CALL adjust_lambda(lambda, dx_vct, 6, 2, q, d, g, ng)
+        CALL adjust_lambda(lambda, dx_vct, 7, 3, q, d, g, ng)
         !!lambda(11:27) = lambda(11:27)*(1.9/2.0)
         !lambda(11:16) = lambda(11:16)*(1.8/2.0)
         !lambda(17)    = lambda(17)   *(1.8/2.0)
@@ -144,25 +145,24 @@ DO ilambda=0, nlambda
     ENDIF
 
     vel(:) = DBLE(0)
-    vel(1) = Vmax
+    vel(1) = vmax
     maxz = DBLE(0)
-    CALL get_C (C, lambda, g, vel, ng, d, q, lattice, dx)
-    CALL get_maxz_maxk_3D (k, nk, S_inv, M, q, d, L, C, M_inv, dt, z, DUMMY, &
-      EWORK, LWORK, RWORK, INFO, maxz, maxk, maxz_pl, maxk_pl, nthreads)
+    CALL get_C (C, lambda, g, vel, ng, d, q, dx_vct)
+    CALL get_maxz_maxk_3D (dx_vct, k, S_inv, M, q, d, L, C, M_inv, z, DUMMY, &
+      EWORK, LWORK, RWORK, INFO, maxz, maxk, maxz_pl, maxk_pl)
     IF (maxz < DBLE(0)) THEN
         WRITE(*,*) "vmax is stable", lambda(1)
         EXIT
     ENDIF
     vlow = DBLE(0)
-    vhgh = Vmax
+    vhgh = vmax
     DO ivel=0, nvel
         ! Bisect the interval
         vel(1) = 0.5d+0*(vlow+vhgh) 
         maxz = DBLE(0)
-        CALL get_C (C, lambda, g, vel, ng, d, q, lattice, dx)
-        CALL get_maxz_maxk_3D (k, nk, S_inv, M, q, d, L, C, M_inv, dt, z, &
-          DUMMY, EWORK, LWORK, RWORK, INFO, maxz, maxk, maxz_pl, maxk_pl, &
-          nthreads)
+        CALL get_C (C, lambda, g, vel, ng, d, q, dx_vct)
+        CALL get_maxz_maxk_3D (dx_vct, k, S_inv, M, q, d, L, C, M_inv, z, &
+          DUMMY, EWORK, LWORK, RWORK, INFO, maxz, maxk, maxz_pl, maxk_pl)
         IF (maxz > DBLE(0)) THEN
             vhgh = vel(1)
             unstablek = maxk 
@@ -177,15 +177,15 @@ END SUBROUTINE
 !------------------------------------------------------------------------------
 !::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 !------------------------------------------------------------------------------
-SUBROUTINE vmax_vs_lambda_aligned(lattice, dt, nthreads, d, q, ng, dx)
+SUBROUTINE vmax_vs_lambda_aligned(d, q, ng, dx_vct)
 
-INTEGER :: INFO, ik, nk, d, q, ng, lattice, LWORK, ilambda, nlambda, ivel, &
-  nvel, itheta, ntheta, nthreads, tid
+INTEGER :: INFO, ik, d, q, ng, LWORK, ilambda, ivel, &
+  itheta, ntheta, tid
 COMPLEX(8) :: DUMMY(1,1)
 COMPLEX(8), ALLOCATABLE :: L(:, :), S_inv(:, :), z(:), EWORK(:)
 REAL(8), ALLOCATABLE :: lambda(:), k(:), vel(:), RWORK(:), M(:, :), &
   M_inv(:, :), C(:, :), g(:) , maxk(:)
-REAL(8) :: maxz, vmag, dt, dx(d)
+REAL(8) :: maxz, vmag, dx_vct(d)
 REAL(8), ALLOCATABLE :: maxz_pl(:), maxk_pl(:, :)
 EXTERNAL :: ZGEEV
 
@@ -200,15 +200,12 @@ ALLOCATE ( maxz_pl(nthreads) )
 CALL omp_set_num_threads(nthreads)
 
 !------------------------------------------------------------------------------
-CALL setup_params(g, ng, lattice)
+CALL setup_params(g, ng)
 
-nlambda = 20
-nvel = 50
 ntheta = 100
-nk = 100
 
 ! Find M and M_inv
-CALL get_M (d, q, M, lattice, dx)
+CALL get_M (d, q, M, dx_vct)
 CALL Invert_M_Orth (M, M_inv, q)
 
 lambda(:) = DBLE(0)
@@ -216,31 +213,31 @@ DO ilambda=0, nlambda
     lambda(:) = (1.8d+0) + DBLE(ilambda)*(0.2d+0)/DBLE(nlambda)
 
     IF (lattice == 2) THEN
-        CALL adjust_lambda(lambda, dx, 4, 1, q, d)
-        CALL adjust_lambda(lambda, dx, 5, 2, q, d)
+        CALL adjust_lambda(lambda, dx_vct, 4, 1, q, d, g, ng)
+        CALL adjust_lambda(lambda, dx_vct, 5, 2, q, d, g, ng)
         !lambda(7:8) = (0.9d+0)*lambda(7:8)
     ELSE IF (lattice == 3) THEN
-        CALL adjust_lambda(lambda, dx, 5, 1, q, d)
-        CALL adjust_lambda(lambda, dx, 6, 2, q, d)
-        CALL adjust_lambda(lambda, dx, 7, 3, q, d)
+        CALL adjust_lambda(lambda, dx_vct, 5, 1, q, d, g, ng)
+        CALL adjust_lambda(lambda, dx_vct, 6, 2, q, d, g, ng)
+        CALL adjust_lambda(lambda, dx_vct, 7, 3, q, d, g, ng)
         !lambda(11:17) = (0.9d+0)*lambda(11:17)
         !lambda(24:26) = (0.9d+0)*lambda(24:26)
     ENDIF
 
-    vel(:) = DBLE(0)
     DO ivel=0, nvel
         vmag = DBLE(ivel)*(0.4d+0)/DBLE(nvel) 
         maxz = DBLE(0)
-        !$OMP PARALLEL PRIVATE(itheta, ik, tid) &
-        !$OMP FIRSTPRIVATE(vel, C, k, S_inv, L, z, EWORK, &
-        !$OMP RWORK, maxz, maxk, INFO)
+        !!$OMP PARALLEL PRIVATE(itheta, ik, tid, INFO, vel) &
+        !!$OMP FIRSTPRIVATE(C, k, S_inv, L, z, EWORK, &
+        !!$OMP RWORK, maxz, maxk)
+        vel(:) = DBLE(0)
         tid = OMP_GET_THREAD_NUM()
-        !$OMP DO
+        !!$OMP DO
         DO itheta=0, ntheta
             vel(1) = vmag*cos(PI*(0.5d+0)*DBLE(itheta)/DBLE(ntheta))
             vel(2) = vmag*sin(PI*(0.5d+0)*DBLE(itheta)/DBLE(ntheta))
 
-            CALL get_C (C, lambda, g, vel, ng, d, q, lattice, dx)
+            CALL get_C (C, lambda, g, vel, ng, d, q, dx_vct)
             k(:) = DBLE(0)
             DO ik=1, nk 
                 k(1) = PI*DBLE(ik)/DBLE(nk)*cos(PI*(0.5d+0)*DBLE(itheta) &
@@ -251,7 +248,7 @@ DO ilambda=0, nlambda
                 CALL get_S_inv (S_inv, M, k, q, d)
 
                 ! Get L
-                CALL get_L_dt (L, C, M, M_inv, S_inv, q, dt)
+                CALL get_L_dt (L, C, M, M_inv, S_inv, q)
 
                 !---------------------------------------------------------------
                 ! Find eigenvalues using LAPACK driver ZGEEV
@@ -260,11 +257,11 @@ DO ilambda=0, nlambda
                 CALL update_max(maxz, maxk, z, k, d, q) 
             ENDDO
         ENDDO
-        !$OMP END DO
+        !!$OMP END DO
         maxz_pl(tid+1) = maxz
         maxk_pl(tid+1, :) = maxk(:)
 
-        !$OMP END PARALLEL
+        !!$OMP END PARALLEL
 
         ! Print data if there was an unstable eigenvalue
         CALL gather_max(maxz_pl, maxk_pl, maxz, maxk, d, nthreads)
@@ -280,14 +277,14 @@ END SUBROUTINE
 !------------------------------------------------------------------------------
 !::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 !------------------------------------------------------------------------------
-SUBROUTINE single_ev(lattice, d, q, ng, dx)
+SUBROUTINE single_ev(d, q, ng, dx_vct)
 
-INTEGER :: INFO, i, d, q, ng, lattice, LWORK, maxzind, ierr
+INTEGER :: INFO, i, d, q, ng, LWORK, maxzind, ierr
 COMPLEX(8) :: DUMMY(1,1)
 COMPLEX(8), ALLOCATABLE :: L(:, :), S_inv(:, :), z(:), EWORK(:), VR(:, :)
 REAL(8), ALLOCATABLE :: lambda(:), k(:), vel(:), RWORK(:), M(:, :), &
   M_inv(:, :), C(:, :), g(:)
-REAL(8) :: maxz, dx(d)
+REAL(8) :: maxz, dx_vct(d)
 EXTERNAL :: ZGEEV
 
 !------------------------------------------------------------------------------
@@ -298,7 +295,7 @@ ALLOCATE ( VR(q, q), STAT = ierr)
 IF (ierr /= 0) STOP "Not enough memory"
 
 !------------------------------------------------------------------------------
-CALL setup_params(g, ng, lattice)
+CALL setup_params(g, ng)
 
 lambda(:) = 1.9823d+0
 
@@ -308,10 +305,10 @@ vel(1) = 0.0577d+0
 !------------------------------------------------------------------------------
 ! Do test
 ! Find M and M_inv
-CALL get_M (d, q, M, lattice, dx)
+CALL get_M (d, q, M, dx_vct)
 CALL invert_M_orth (M, M_inv, q)
 
-CALL get_C (C, lambda, g, vel, ng, d, q, lattice, dx)
+CALL get_C (C, lambda, g, vel, ng, d, q, dx_vct)
 
 k(:) = DBLE(0)
 k(1) = 1.7d+0
@@ -344,15 +341,15 @@ END SUBROUTINE
 !------------------------------------------------------------------------------
 !::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 !------------------------------------------------------------------------------
-SUBROUTINE find_best_lambda(lattice, dt, nthreads, d, q, ng, dx)
+SUBROUTINE find_best_lambda(d, q, ng, dx_vct)
 
-INTEGER :: INFO, ikx, iky, nk, d, q, ng, lattice, LWORK, nlambda, &
-  nthreads, tid, first_val, ilambda7, ilambda8, ilambda9
+INTEGER :: INFO, ikx, iky, d, q, ng, LWORK, &
+  tid, first_val, ilambda7, ilambda8, ilambda9
 COMPLEX(8) :: DUMMY(1,1)
 COMPLEX(8), ALLOCATABLE :: L(:, :), S_inv(:, :), z(:), EWORK(:)
 REAL(8), ALLOCATABLE :: lambda(:), k(:), vel(:), RWORK(:), M(:, :), &
   M_inv(:, :), C(:, :), g(:), maxk(:), best_lambda(:)
-REAL(8) :: maxz, dt, lowest_maxz, dx(d)
+REAL(8) :: maxz, lowest_maxz, dx_vct(d)
 REAL(8), ALLOCATABLE :: maxz_pl(:), maxk_pl(:, :)
 EXTERNAL :: ZGEEV
 
@@ -368,23 +365,20 @@ ALLOCATE ( best_lambda(q) )
 CALL omp_set_num_threads(nthreads)
 
 !------------------------------------------------------------------------------
-CALL Setup_Params(g, ng, lattice)
-
-nlambda = 10
-nk = 16
+CALL Setup_Params(g, ng)
 
 ! Find M and M_inv
-CALL get_M (d, q, M, lattice, dx)
+CALL get_M (d, q, M, dx_vct)
 CALL invert_M_orth (M, M_inv, q)
 
 lambda(:) = (1.99d+0)
 IF (lattice == 2) THEN
-    CALL adjust_lambda(lambda, dx, 4, 1, q, d)
-    CALL adjust_lambda(lambda, dx, 5, 2, q, d)
+    CALL adjust_lambda(lambda, dx_vct, 4, 1, q, d, g, ng)
+    CALL adjust_lambda(lambda, dx_vct, 5, 2, q, d, g, ng)
 ELSE IF (lattice == 3) THEN
-    CALL adjust_lambda(lambda, dx, 5, 1, q, d)
-    CALL adjust_lambda(lambda, dx, 6, 2, q, d)
-    CALL adjust_lambda(lambda, dx, 7, 3, q, d)
+    CALL adjust_lambda(lambda, dx_vct, 5, 1, q, d, g, ng)
+    CALL adjust_lambda(lambda, dx_vct, 6, 2, q, d, g, ng)
+    CALL adjust_lambda(lambda, dx_vct, 7, 3, q, d, g, ng)
 ENDIF
 
 vel(:) = DBLE(0)
@@ -398,14 +392,14 @@ DO ilambda9=0, nlambda
     lambda(9) = lambda(1)*(0.5d+0)*(1.0d+0 + DBLE(ilambda9)/DBLE(nlambda))
     maxz = DBLE(0)
 
-    CALL get_C (C, lambda, g, vel, ng, d, q, lattice, dx)
+    CALL get_C (C, lambda, g, vel, ng, d, q, dx_vct)
 
-    !$OMP PARALLEL PRIVATE(ikx, iky, tid) &
-    !$OMP FIRSTPRIVATE(k, S_inv, L, z, EWORK, &
-    !$OMP RWORK, maxz, maxk, INFO)
+    !!$OMP PARALLEL PRIVATE(ikx, iky, tid, INFO) &
+    !!$OMP FIRSTPRIVATE(k, S_inv, L, z, EWORK, &
+    !!$OMP RWORK, maxz, maxk)
     tid = OMP_GET_THREAD_NUM()
     k(:) = DBLE(0)
-    !$OMP DO
+    !!$OMP DO
     DO ikx=0, nk
       DO iky=0, nk 
         k(1) = PI*DBLE(ikx)/DBLE(nk)
@@ -414,7 +408,7 @@ DO ilambda9=0, nlambda
         CALL get_S_inv (S_inv, M, k, q, d)
 
         ! Get L
-        CALL get_L_dt (L, C, M, M_inv, S_inv, q, dt)
+        CALL get_L_dt (L, C, M, M_inv, S_inv, q)
 
         !---------------------------------------------------------------
         ! Find eigenvalues using LAPACK driver ZGEEV
@@ -425,11 +419,11 @@ DO ilambda9=0, nlambda
         ENDIF 
      ENDDO
     ENDDO
-    !$OMP END DO
+    !!$OMP END DO
     maxz_pl(tid+1) = maxz
     maxk_pl(tid+1, :) = maxk(:)
 
-    !$OMP END PARALLEL
+    !!$OMP END PARALLEL
 
     ! Print data if there was an unstable eigenvalue
     CALL gather_max(maxz_pl, maxk_pl, maxz, maxk, d, nthreads)

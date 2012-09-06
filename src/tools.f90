@@ -18,15 +18,16 @@
 
 MODULE tools
 use lat_data
+use cfg
 IMPLICIT NONE
 
 CONTAINS
 
 !------------------------------------------------------------------------------
-SUBROUTINE setup_params (g, ng, lattice)
+SUBROUTINE setup_params (g, ng)
 
 REAL(8) :: g(ng)
-INTEGER :: ng, lattice
+INTEGER :: ng
 
 IF (lattice == 1) THEN
     g(1) = DBLE(-8)        ! alpha 2 
@@ -37,19 +38,19 @@ IF (lattice == 1) THEN
     g(6) = DBLE(2)/DBLE(3) ! gamma 3
     g(7) = DBLE(-18)       ! gamma 4
 ELSE IF (lattice == 2) THEN
-    g(1) = DBLE(1)/DBLE(3) ! c_s^2
-    g(2) = DBLE(1)/DBLE(3)
-    g(3) = DBLE(1)/DBLE(9)
-    g(4) = DBLE(1)/DBLE(3)
+    g(1) = (xchar**2)/DBLE(3) ! c_s^2
+    g(2) = (xchar**2)/DBLE(3) ! gamma 1
+    g(3) = (xchar**4)/DBLE(9) ! gamma 2
+    g(4) = (xchar**2)/DBLE(3) ! gamma 3
 ELSE IF (lattice == 3) THEN
-    g(1) = DBLE(1)/DBLE(3) ! c_s^2 
-    g(2) = DBLE(1)/DBLE(3)
-    g(3) = DBLE(1)/DBLE(9)
-    g(4) = DBLE(1)/DBLE(3)
-    g(5) = DBLE(1)/DBLE(3)
-    g(6) = DBLE(1)/DBLE(9)
-    g(7) = DBLE(1)/DBLE(27)
-    g(8) = DBLE(1)/DBLE(9)
+    g(1) = (xchar**2)/DBLE(3) ! c_s^2 
+    g(2) = (xchar**2)/DBLE(3)
+    g(3) = (xchar**4)/DBLE(9)
+    g(4) = (xchar**2)/DBLE(3)
+    g(5) = (xchar**2)/DBLE(3)
+    g(6) = (xchar**4)/DBLE(9)
+    g(7) = (xchar**6)/DBLE(27)
+    g(8) = (xchar**4)/DBLE(9)
 ENDIF
 
 END SUBROUTINE
@@ -64,7 +65,6 @@ S_inv(:,:) = DCMPLX(0)
 do i = 1, q 
     S_inv(i, i) = exp( DCMPLX(0, -1)*DOT_PRODUCT(k, M(2:d+1, i)))
 enddo
-
 END SUBROUTINE
 !------------------------------------------------------------------------------
 SUBROUTINE invert_M_orth (M, M_inv, q)
@@ -103,11 +103,11 @@ L = MATMUL(S_inv, WORK2)
 
 END SUBROUTINE
 !------------------------------------------------------------------------------
-SUBROUTINE get_L_dt (L, C, M, M_inv, S_inv, q, dt)
+SUBROUTINE get_L_dt (L, C, M, M_inv, S_inv, q)
 
 INTEGER          :: q, i
 COMPLEX(8)      :: L(q, q), S_inv(q, q), WORK1(q, q), WORK2(q, q)
-REAL(8) :: C(q, q), M(q, q), M_inv(q, q), dt
+REAL(8) :: C(q, q), M(q, q), M_inv(q, q)
 
 WORK1 = MATMUL(C, M)
 WORK2 = MATMUL(M_inv, WORK1)
@@ -123,18 +123,18 @@ enddo
 
 END SUBROUTINE
 !------------------------------------------------------------------------------
-SUBROUTINE get_C (C, lambda, g, vel, ng, d, q, lattice, dx)
+SUBROUTINE get_C (C, lambda, g, vel, ng, d, q, dx_vct)
 
-INTEGER          :: d, q, ng, lattice
-REAL(8) :: C(q, q), lambda(q), g(ng), vel(d), dx(d)
+INTEGER          :: d, q, ng
+REAL(8) :: C(q, q), lambda(q), g(ng), vel(d), dx_vct(d)
 
 SELECT CASE (lattice)
     CASE (1)
     CALL get_C_1 (C, lambda, g, vel, ng, d, q)
     CASE (2)
-    CALL get_C_2 (C, lambda, g, vel, ng, d, q, dx)
+    CALL get_C_2 (C, lambda, g, vel, ng, d, q, dx_vct)
     CASE (3)
-    CALL get_C_3 (C, lambda, g, vel, ng, d, q, dx)
+    CALL get_C_3 (C, lambda, g, vel, ng, d, q, dx_vct)
     CASE DEFAULT
     stop
 END SELECT
@@ -158,27 +158,27 @@ END IF
 
 END SUBROUTINE
 !------------------------------------------------------------------------------
-SUBROUTINE get_M (d, q, M, lattice, dx)
+SUBROUTINE get_M (d, q, M, dx_vct)
 
-INTEGER :: d, q, lattice
-REAL(8) :: M(q, q), dx(d)
+INTEGER :: d, q
+REAL(8) :: M(q, q), dx_vct(d)
 
 SELECT CASE (lattice)
     CASE (1)
     CALL get_M_1 (q, M)
     CASE (2)
-    CALL get_M_2 (d, q, M, dx)
+    CALL get_M_2 (d, q, M, dx_vct)
     CASE (3)
-    CALL get_M_3 (d, q, M, dx)
+    CALL get_M_3 (d, q, M, dx_vct)
     CASE DEFAULT
     stop "Lattice not supported, exiting."
 END SELECT
 
 END SUBROUTINE
 !------------------------------------------------------------------------------
-SUBROUTINE get_sizes (d, q, ng, lattice)
+SUBROUTINE get_sizes (d, q, ng)
 
-INTEGER :: d, q, ng, lattice
+INTEGER :: d, q, ng
 
 SELECT CASE (lattice)
     CASE (1)
@@ -258,13 +258,14 @@ IF (ierr /= 0) STOP "Not enough memory"
 
 END SUBROUTINE
 !------------------------------------------------------------------------------
-SUBROUTINE adjust_lambda (lambda, dx, iq, id, q, d)
+SUBROUTINE adjust_lambda (lambda, dx_vct, iq, id, q, d, g, ng)
 
-INTEGER :: iq, id, q, d
-REAL(8) :: lambda(q), dx(d)
+INTEGER :: iq, id, q, d, ng
+REAL(8) :: lambda(q), dx_vct(d), g(ng)
 
-lambda(iq) = DBLE(-1)*(dx(id)*dx(id) - DBLE(1)/DBLE(3))/ &
-  ( DBLE(-2)/( DBLE(3)*lambda(iq) ) + (0.5d+0)*(DBLE(1) - dx(id)*dx(id)))
+lambda(iq) = DBLE(-1)*(dx_vct(id)*dx_vct(id) - g(2))/ &
+  ( (DBLE(-2)*g(2))/lambda(iq) &
+  + (0.5d+0)*( (DBLE(3)*g(2)) - dx_vct(id)*dx_vct(id)))
 
 END SUBROUTINE
 !------------------------------------------------------------------------------
@@ -282,16 +283,77 @@ ENDIF
 
 END SUBROUTINE
 !------------------------------------------------------------------------------
-SUBROUTINE gather_max(maxz_pl, maxk_pl, maxz, maxk, d, nthreads)
+SUBROUTINE gather_max(maxz_pl, maxk_pl, maxz, maxk, d, ngather)
 
-INTEGER :: d, nthreads, ithread
-REAL(8) :: maxz_pl(nthreads), maxk_pl(nthreads, d), maxz, maxk(d)
+INTEGER :: d, ngather, igather
+REAL(8) :: maxz_pl(ngather), maxk_pl(ngather, d), maxz, maxk(d)
 
-DO ithread=1, nthreads
-    IF (maxz_pl(ithread) > maxz) THEN
-        maxz = maxz_pl(ithread)
-        maxk(:) = maxk_pl(ithread, :)
+DO igather=1, ngather
+    IF (maxz_pl(igather) > maxz) THEN
+        maxz = maxz_pl(igather)
+        maxk(:) = maxk_pl(igather, :)
     ENDIF
+ENDDO
+
+END SUBROUTINE
+!------------------------------------------------------------------------------
+SUBROUTINE get_k_discrete(ikx, iky, ikz, d, k, dx_vct)
+
+INTEGER :: ikx, iky, ikz, d
+REAL(8) :: k(d), dx_vct(d)
+
+IF (ikx.EQ.1) THEN
+    k(1) = DBLE(0)
+ELSE
+    k(1) = 2.0*PI/(DBLE(ikx)*dx_vct(1))
+ENDIF
+IF (iky.EQ.1) THEN
+    k(2) = DBLE(0)
+ELSE
+    k(2) = 2.0*PI/(DBLE(iky)*dx_vct(2))
+ENDIF
+IF (d.EQ.3) THEN
+    IF (ikz.EQ.1) THEN
+        k(3) = DBLE(0)
+    ELSE
+        k(3) = 2.0*PI/(DBLE(ikz)*dx_vct(3))
+    ENDIF
+ENDIF
+
+END SUBROUTINE
+!------------------------------------------------------------------------------
+SUBROUTINE get_k(ikx, iky, ikz, d, k, dx_vct)
+
+INTEGER :: ikx, iky, ikz, d
+REAL(8) :: k(d), dx_vct(d)
+
+IF (ikx.EQ.1) THEN
+    k(1) = DBLE(0)
+ELSE
+    k(1) = PI*DBLE(ikx)/(DBLE(nk)*dx_vct(1))
+ENDIF
+IF (iky.EQ.1) THEN
+    k(2) = DBLE(0)
+ELSE
+    k(2) = PI*DBLE(iky)/(DBLE(nk)*dx_vct(2))
+ENDIF
+IF (d.EQ.3) THEN
+    IF (ikz.EQ.1) THEN
+        k(3) = DBLE(0)
+    ELSE
+        k(3) = PI*DBLE(ikz)/(DBLE(nk)*dx_vct(3))
+    ENDIF
+ENDIF
+
+END SUBROUTINE
+!------------------------------------------------------------------------------
+SUBROUTINE print_matrix(A, ni, nj)
+
+INTEGER :: ni, nj, i, j
+REAL(8) :: A(ni, nj)
+
+DO i=1, ni
+    WRITE(*, "(100F7.2)") ( A(i,j), j=1,nj )
 ENDDO
 
 END SUBROUTINE

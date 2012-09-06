@@ -17,25 +17,56 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-FORTFLAGS = -Wall -fopenmp -Jobj/ -Iobj/
+MAKEFLAGS += -j
+FORTFLAGS = -Wall -O3 -s -fopenmp -Jobj/ -Iobj/
 
-bin/lb_pert: obj/lb_pert.o obj/lat_data.o obj/tests.o obj/tools.o obj/core.o
-	gfortran $(FORTFLAGS) -llapack -o $@ obj/lb_pert.o obj/lat_data.o obj/tests.o obj/tools.o obj/core.o
+OBJECTS = \
+  obj/lb_pert.o \
+  obj/lat_data.o \
+  obj/tests.o \
+  obj/tools.o \
+  obj/core.o \
+  obj/cfg.o
 
-obj/lb_pert.o: src/lb_pert.f90 obj/tests.mod
+bin/lb_pert: $(OBJECTS)
+	gfortran $(FORTFLAGS) -llapack -o $@ $(OBJECTS)
+
+# Objects
+obj/lb_pert.o: src/lb_pert.f90
 	gfortran $(FORTFLAGS) -c -o $@ $<
 
 obj/lat_data.o: src/lat_data.f90
 	gfortran $(FORTFLAGS) -c -o $@ $< 
 
-obj/tests.o: src/tests.f90 obj/tools.mod obj/core.mod
+obj/tests.o: src/tests.f90
 	gfortran $(FORTFLAGS) -c -o $@ $< 
 
-obj/tools.o: src/tools.f90 obj/lat_data.mod
+obj/tools.o: src/tools.f90
 	gfortran $(FORTFLAGS) -c -o $@ $< 
 
-obj/core.o: src/core.f90 obj/tools.mod
+obj/core.o: src/core.f90
 	gfortran $(FORTFLAGS) -c -o $@ $< 
+
+obj/cfg.o: src/cfg.f90
+	gfortran $(FORTFLAGS) -c -o $@ $< 
+
+# Depedancies
+obj/core.o: obj/tools.mod
+
+obj/tools.o: obj/lat_data.mod
+
+obj/tests.o: obj/tools.mod
+
+obj/tests.o: obj/core.mod
+
+obj/tests.o: obj/cfg.mod
+
+obj/lb_pert.o: obj/cfg.mod
+
+obj/lb_pert.o: obj/tests.mod
+
+# Modules
+obj/cfg.mod: obj/cfg.o
 
 obj/tests.mod: obj/tests.o
 
@@ -45,6 +76,7 @@ obj/tools.mod: obj/tools.o
 
 obj/core.mod: obj/core.o
 
+# Clean
 clean:
 	rm -vf bin/*
 	rm -vf obj/*

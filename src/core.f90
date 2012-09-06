@@ -18,23 +18,24 @@
 
 MODULE core
 use tools
+use cfg
 use omp_lib
 IMPLICIT NONE
-REAL(8), PARAMETER :: PI = 3.141592653589793238d+0
+
 
 CONTAINS
 !------------------------------------------------------------------------------
-SUBROUTINE get_maxz_maxk_3D (k, nk, S_inv, M, q, d, L, C, M_inv, dt, z, &
-  DUMMY, EWORK, LWORK, RWORK, INFO, maxz, maxk, maxz_pl, maxk_pl, nthreads)
+SUBROUTINE get_maxz_maxk_3D (dx_vct, k, S_inv, M, q, d, L, C, M_inv, z, &
+  DUMMY, EWORK, LWORK, RWORK, INFO, maxz, maxk, maxz_pl, maxk_pl)
 
-INTEGER :: INFO, ikx, iky, ikz, tid, nk, d, q, LWORK, nthreads, nkz
+INTEGER :: INFO, ikx, iky, ikz, tid, d, q, LWORK, nkz
 COMPLEX(8) :: DUMMY(1,1), L(q, q), S_inv(q, q), z(q), EWORK(LWORK)
 REAL(8) :: k(d), RWORK(2*q), M(q, q), M_inv(q, q), C(q, q), maxk(d), maxz, &
-  dt, maxz_pl(nthreads), maxk_pl(nthreads, d)
+  maxz_pl(nthreads), maxk_pl(nthreads, d), dx_vct(d)
 EXTERNAL :: ZGEEV
 
 IF (d.EQ.2) THEN
-    nkz = 0
+    nkz = 1
 ELSE
     nkz = nk
 ENDIF
@@ -45,43 +46,28 @@ ENDIF
 tid = OMP_GET_THREAD_NUM()
 k(:) = DBLE(0)
 !$OMP DO
-DO ikx=0, nk
-  DO iky=0, nk 
-    DO ikz=0, nkz 
-        IF (ikx.EQ.0) THEN
-            k(1) = DBLE(0)
-        ELSE
-            k(1) = PI/DBLE(ikx)
-        ENDIF
-        IF (iky.EQ.0) THEN
-            k(2) = DBLE(0)
-        ELSE
-            k(2) = PI/DBLE(iky)
-        ENDIF
-        IF (ikz.EQ.0) THEN
-            k(3) = DBLE(0)
-        ELSE
-            k(3) = PI/DBLE(ikz)
-        ENDIF
+DO ikx=1, nk
+  DO iky=1, nk 
+    DO ikz=1, nkz 
 
-        ! Alternative calculation of k to give discrete wavelengths.
-        !k(1) = PI*DBLE(ikx)/DBLE(nk)
-        !k(2) = PI*DBLE(iky)/DBLE(nk)
-        !k(3) = PI*DBLE(ikz)/DBLE(nk)
+        CALL get_k(ikx, iky, ikz, d, k, dx_vct)
 
         ! Setup the inverse of the advection matrix S_inv
         CALL get_S_inv (S_inv, M, k, q, d)
 
         ! Get L
-        CALL get_L_dt (L, C, M, M_inv, S_inv, q, dt)
+        CALL get_L_dt (L, C, M, M_inv, S_inv, q)
 
         !------------------------------------------------------------------
         ! Find eigenvalues using LAPACK driver ZGEEV
         CALL ZGEEV('N', 'N', q, L, q, z, DUMMY, 1, DUMMY, 1, EWORK, &
           LWORK, RWORK, INFO)
-        IF ( (ikx.NE.0) .OR. (iky.NE.0) .OR. (ikz.NE.0) ) THEN
+
+        ! ikx = iky = ikz = 1 is DC
+        IF ( (ikx.NE.1) .OR. (iky.NE.1) .OR. (ikz.NE.1) ) THEN
             CALL update_max(maxz, maxk, z, k, d, q)
         ENDIF
+
     ENDDO
   ENDDO
 ENDDO
